@@ -46,9 +46,11 @@ function Test-ServerHost([string]$h) {
   if ($h.Contains(',')) {
     Die "Invalid ServerHost '$h' (comma found). Use dots for IPs, e.g. 192.168.1.50"
   }
+
   # Allow IPv4 or a reasonable hostname.
   $ipv4 = '^(?:\d{1,3}\.){3}\d{1,3}$'
-  $host = '^[A-Za-z0-9.-]+$'
+  $hostPattern = '^[A-Za-z0-9.-]+$'
+
   if ($h -match $ipv4) {
     $parts = $h.Split('.')
     foreach ($p in $parts) {
@@ -57,7 +59,8 @@ function Test-ServerHost([string]$h) {
     }
     return
   }
-  if (-not ($h -match $host)) {
+
+  if (-not ($h -match $hostPattern)) {
     Die "Invalid ServerHost '$h'. Use an IPv4 (192.168.x.x) or a hostname (cache.local)."
   }
 }
@@ -73,7 +76,16 @@ function Find-PythonCmd {
 function Pip-Run([string[]]$args) {
   $py = Find-PythonCmd
   if ($null -eq $py) { Die "Python not found (py/python). Install Python to configure pip." }
-  & $py[0] @($py[1..($py.Count-1)] + @('-m','pip') + $args)
+
+  $exe = $py[0]
+  $exeArgs = @()
+  if ($py.Count -gt 1) {
+    $exeArgs += $py[1..($py.Count-1)]
+  }
+  $exeArgs += @('-m','pip')
+  $exeArgs += $args
+
+  & $exe @exeArgs
 }
 
 function Tool-Exists([string]$name) {
@@ -158,9 +170,9 @@ function Check-Ports([string]$h) {
     } catch { $ok = $false }
 
     if ($ok) {
-      Write-Log "✓ TCP reachable: $($p.Name) on $h:$($p.Port)"
+      Write-Log "OK   TCP reachable: $($p.Name) on ${h}:$($p.Port)"
     } else {
-      Write-Warn "✗ TCP not reachable: $($p.Name) on $h:$($p.Port) (firewall/network?)"
+      Write-Warn "FAIL TCP not reachable: $($p.Name) on ${h}:$($p.Port) (firewall/network?)"
     }
   }
 }
@@ -178,7 +190,7 @@ function Install-Client([string]$h) {
   # --- npm ---
   if (Tool-Exists 'npm') {
     $state.npm.prevRegistry = Npm-GetRegistry
-    Npm-SetRegistry "http://$h`:4873/"
+    Npm-SetRegistry "http://${h}:4873/"
   } else {
     Write-Warn "npm not found; skipping npm config."
   }
@@ -186,13 +198,12 @@ function Install-Client([string]$h) {
   # --- pip ---
   $py = Find-PythonCmd
   if ($null -ne $py) {
-    # Check that pip exists for that Python
     try {
       Pip-Run @('--version') | Out-Null
       $state.pip.prevIndexUrl     = Pip-GetConfig 'global.index-url'
       $state.pip.prevTrustedHost  = Pip-GetConfig 'global.trusted-host'
 
-      Pip-SetConfig 'global.index-url' "http://$h`:3141/root/pypi/+simple/"
+      Pip-SetConfig 'global.index-url' "http://${h}:3141/root/pypi/+simple/"
       Pip-SetConfig 'global.trusted-host' $h
     } catch {
       Write-Warn "Python found but pip not available. Install pip (or reinstall Python with pip)."
@@ -205,9 +216,9 @@ function Install-Client([string]$h) {
 
   Write-Log "Client configured to use cache server: $h"
   Write-Log "Quick tests:"
-  Write-Host "  npm:  npm cache clean --force; npm i lodash" 
-  Write-Host "  pip:  python -m pip cache purge; python -m pip install requests" 
-  Write-Host "  note: APT caching is Linux-only; use WSL2 Ubuntu for APT." 
+  Write-Host "  npm:  npm cache clean --force; npm i lodash"
+  Write-Host "  pip:  python -m pip cache purge; python -m pip install requests"
+  Write-Host "  note: APT caching is Linux-only; use WSL2 Ubuntu for APT."
 
   Check-Ports $h
 }
@@ -276,19 +287,13 @@ function Status-Client([string]$h) {
 
   Write-Log "Server reachability checks"
   Check-Ports $h
-  Write-Host "  verdaccio url: http://$h`:4873/"
-  Write-Host "  devpi url:     http://$h`:3141/"
-  Write-Host "  apt url:       http://$h`:3142/acng-report.html (Linux/WSL only)"
+  Write-Host "  verdaccio url: http://${h}:4873/"
+  Write-Host "  devpi url:     http://${h}:3141/"
+  Write-Host "  apt url:       http://${h}:3142/acng-report.html (Linux/WSL only)"
 }
 
 switch ($Action) {
-  'install' {
-    Install-Client $ServerHost
-  }
-  'reset' {
-    Reset-Client
-  }
-  'status' {
-    Status-Client $ServerHost
-  }
+  'install' { Install-Client $ServerHost }
+  'reset'   { Reset-Client }
+  'status'  { Status-Client $ServerHost }
 }
