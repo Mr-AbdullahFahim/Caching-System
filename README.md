@@ -62,10 +62,6 @@ The main server workflow is handled by `pkg-cache.sh`. During setup, the script 
   <img src="https://drive.google.com/uc?export=view&id=15wPWIcYUWo851urcsDtnsMAR2ee1BuO_" alt="Unified Package Caching System Architecture" width="1000">
 </p>
 
-### Deployment Workflow Diagram
-
-![Deployment workflow](docs/diagrams/deployment-workflow.svg)
-
 ### Main Components
 
 | Component | Purpose |
@@ -348,12 +344,6 @@ unified-package-caching-system/
 
 ## Screenshots / Demo
 
-### Architecture Snapshot
-
-<p align="center">
-  <img src="https://drive.google.com/uc?export=view&id=15wPWIcYUWo851urcsDtnsMAR2ee1BuO_" alt="Architecture snapshot" width="1000">
-</p>
-
 ### Sample Demo Flow
 
 1. Start the cache server with `./pkg-cache.sh server install`
@@ -385,11 +375,13 @@ python installer.py
 
 ## Contributors
 
-| Team Member | Role |
-|------------|------|
-| Abdullah Fahim | Core server automation, Linux client setup, repository integration |
-| Amjad Hussain | Windows client support and configuration |
-| Mohomad Fazil (Fazilfareed) | GUI installer prototype and UI improvements |
+| Team Member | Registration Number | Email | Contribution |
+|------------|---------------------|-------|--------------|
+| M. F. Abdulla | 2021/CSC/074 | fahimabdullah528@gmail.com | Project lead, core server-side Bash scripting, Docker-based cache proxy deployment, system integration, and documentation |
+| Z. H. Amjad Hussain | 2021/CSC/065 | zh.amjadhussain@gmail.com | Windows client configuration, PowerShell automation, connectivity checks, testing, and debugging |
+| M. Fazil | 2021/CSC/105 | fazilfrd9@gmail.com | Client installer interface, Linux and Windows installer packaging, and usability improvements |
+| A. M. Musharaf | 2021/CSC/001 | musharafmunaf@gmail.com | Landing page development, testing, troubleshooting, deployment assistance, and validation support |
+| R. Risani | 2021/CSC/095 | fathimarisani21@gmail.com | Research, validation, testing, report writing, and presentation support |
 
 ---
 
