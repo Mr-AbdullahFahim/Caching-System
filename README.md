@@ -59,7 +59,7 @@ The main server workflow is handled by `pkg-cache.sh`. During setup, the script 
 ### High-Level Architecture Diagram
 
 <p align="center">
-  <img src="https://drive.google.com/file/d/15wPWIcYUWo851urcsDtnsMAR2ee1BuO_/view?usp=sharing" alt="Unified Package Caching System Architecture" width="1000">
+  <img src="https://drive.google.com/uc?export=view&id=15wPWIcYUWo851urcsDtnsMAR2ee1BuO_" alt="Unified Package Caching System Architecture" width="1000">
 </p>
 
 ### Deployment Workflow Diagram
@@ -338,7 +338,6 @@ unified-package-caching-system/
 │   ├── project-information.md
 │   ├── project-status.md
 │   └── diagrams/
-│       ├── architecture-overview.jpeg
 │       └── deployment-workflow.svg
 └── examples/
     ├── generated-server-layout.txt
@@ -352,7 +351,7 @@ unified-package-caching-system/
 ### Architecture Snapshot
 
 <p align="center">
-  <img src="https://drive.google.com/file/d/15wPWIcYUWo851urcsDtnsMAR2ee1BuO_/view?usp=sharing" alt="Architecture snapshot" width="1000">
+  <img src="https://drive.google.com/uc?export=view&id=15wPWIcYUWo851urcsDtnsMAR2ee1BuO_" alt="Architecture snapshot" width="1000">
 </p>
 
 ### Sample Demo Flow
