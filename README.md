@@ -59,7 +59,7 @@ The main server workflow is handled by `pkg-cache.sh`. During setup, the script 
 ### High-Level Architecture Diagram
 
 <p align="center">
-  <img src="https://drive.google.com/uc?export=view&id=15wPWIcYUWo851urcsDtnsMAR2ee1BuO_" alt="Unified Package Caching System Architecture" width="1000">
+  <img src="https://drive.google.com/uc?export=view&id=1eG0IcTI0mkiqarMrskc-utjzfTJ12X3s" alt="Unified Package Caching System Architecture" width="1000">
 </p>
 
 ### Main Components
