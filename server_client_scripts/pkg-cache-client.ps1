@@ -3,10 +3,6 @@ What it does on Windows:
   - NPM: points registry to Verdaccio (http://SERVER:4873/)
   - PIP: points index-url to devpi (http://SERVER:3141/root/pypi/+simple/) and sets trusted-host
 
-Notes:
-  - APT caching (apt-cacher-ng :3142) is Linux-only. If you use Ubuntu/Debian in WSL2,
-    run the original Linux client command inside WSL: ./pkg-cache.sh client install <SERVER>
-
 Usage examples (PowerShell):
   .\pkg-cache-client.ps1 -Action install -ServerHost 192.168.1.50
   .\pkg-cache-client.ps1 -Action status  -ServerHost 192.168.1.50
@@ -29,9 +25,11 @@ $ErrorActionPreference = 'Stop'
 $StateDir  = Join-Path $env:USERPROFILE '.pkg-cache-state'
 $StateFile = Join-Path $StateDir 'client.json'
 
-function Write-Log($msg)  { Write-Host "[pkg-cache-client] $msg" }
-function Write-Warn($msg) { Write-Warning "[pkg-cache-client] $msg" }
-function Die($msg)        { throw "[pkg-cache-client] ERROR: $msg" }
+# --- Improved Visual Feedback ---
+function Write-Log($msg)     { Write-Host "[pkg-cache-client] $msg" -ForegroundColor Cyan }
+function Write-Warn($msg)    { Write-Host "[pkg-cache-client] WARNING: $msg" -ForegroundColor Yellow }
+function Write-Success($msg) { Write-Host "[pkg-cache-client] SUCCESS: $msg" -ForegroundColor Green }
+function Die($msg)           { Write-Host "[pkg-cache-client] ERROR: $msg" -ForegroundColor Red; exit 1 }
 
 function Ensure-StateDir {
   if (-not (Test-Path -LiteralPath $StateDir)) {
@@ -47,45 +45,58 @@ function Test-ServerHost([string]$h) {
     Die "Invalid ServerHost '$h' (comma found). Use dots for IPs, e.g. 192.168.1.50"
   }
 
-  # Allow IPv4 or a reasonable hostname.
   $ipv4 = '^(?:\d{1,3}\.){3}\d{1,3}$'
   $hostPattern = '^[A-Za-z0-9.-]+$'
 
-  if ($h -match $ipv4) {
-    $parts = $h.Split('.')
-    foreach ($p in $parts) {
-      $n = [int]$p
-      if ($n -lt 0 -or $n -gt 255) { Die "Invalid IPv4 address: $h" }
-    }
-    return
-  }
-
+  if ($h -match $ipv4) { return }
   if (-not ($h -match $hostPattern)) {
     Die "Invalid ServerHost '$h'. Use an IPv4 (192.168.x.x) or a hostname (cache.local)."
   }
 }
 
 function Find-PythonCmd {
-  # Prefer the Python launcher if available.
-  if (Get-Command py -ErrorAction SilentlyContinue) { return @('py','-3') }
-  if (Get-Command python -ErrorAction SilentlyContinue) { return @('python') }
-  if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
+  if (Get-Command python -ErrorAction SilentlyContinue) { return 'python' }
+  if (Get-Command python3 -ErrorAction SilentlyContinue) { return 'python3' }
+  if (Get-Command py -ErrorAction SilentlyContinue) { return 'py' }
   return $null
 }
 
-function Pip-Run([string[]]$args) {
+# FIX: Refactored to use Start-Process for much more reliable execution
+function Pip-Run([string[]]$pipArgs) {
   $py = Find-PythonCmd
-  if ($null -eq $py) { Die "Python not found (py/python). Install Python to configure pip." }
+  if ($null -eq $py) { Die "Python not found. Install Python to configure pip." }
 
-  $exe = $py[0]
-  $exeArgs = @()
-  if ($py.Count -gt 1) {
-    $exeArgs += $py[1..($py.Count-1)]
+  $argsList = @()
+  if ($py -eq 'py') { $argsList += '-3' }
+  $argsList += '-m'
+  $argsList += 'pip'
+  $argsList += $pipArgs
+
+  # We use Start-Process to avoid PowerShell array parsing quirks
+  $process = Start-Process -FilePath $py -ArgumentList $argsList -NoNewWindow -Wait -PassThru
+  
+  if ($process.ExitCode -ne 0) {
+      throw "Command '$py $argsList' exited with code $($process.ExitCode)"
   }
-  $exeArgs += @('-m','pip')
-  $exeArgs += $args
+}
 
-  & $exe @exeArgs
+function Pip-Run-Quiet([string[]]$pipArgs) {
+  $py = Find-PythonCmd
+  if ($null -eq $py) { return $null }
+
+  $argsList = @()
+  if ($py -eq 'py') { $argsList += '-3' }
+  $argsList += '-m'
+  $argsList += 'pip'
+  $argsList += $pipArgs
+
+  # Native call for retrieving output strings silently
+  try {
+      $out = & $py $argsList 2>$null
+      return $out
+  } catch {
+      return $null
+  }
 }
 
 function Tool-Exists([string]$name) {
@@ -121,45 +132,40 @@ function Npm-SetRegistry([string]$url) {
     return
   }
   Write-Log "Setting npm registry to $url"
-  npm config set registry $url | Out-Null
+  npm config set registry $url
 }
 
 function Npm-RestoreRegistry([string]$prev) {
   if (-not (Tool-Exists 'npm')) { return }
   if ([string]::IsNullOrWhiteSpace($prev)) {
-    # Default npm registry
     $prev = 'https://registry.npmjs.org/'
   }
   Write-Log "Restoring npm registry to $prev"
-  npm config set registry $prev | Out-Null
+  npm config set registry $prev
 }
 
 function Pip-GetConfig([string]$key) {
-  try {
-    $out = Pip-Run @('config','get',$key) 2>$null
-    if ($null -eq $out) { return $null }
-    $v = ($out | Out-String).Trim()
-    if ([string]::IsNullOrWhiteSpace($v)) { return $null }
-    return $v
-  } catch { return $null }
+  $out = Pip-Run-Quiet @('config','get',$key)
+  if ($null -eq $out) { return $null }
+  $v = ($out | Out-String).Trim()
+  if ([string]::IsNullOrWhiteSpace($v)) { return $null }
+  return $v
 }
 
 function Pip-SetConfig([string]$key, [string]$value) {
   Write-Log "pip config set $key = $value"
-  Pip-Run @('config','set',$key,$value) | Out-Null
+  Pip-Run @('config','set',$key,$value)
 }
 
 function Pip-UnsetConfig([string]$key) {
-  try {
-    Pip-Run @('config','unset',$key) | Out-Null
-  } catch { }
+  Write-Log "Unsetting pip config: $key"
+  try { Pip-Run @('config','unset',$key) } catch { Write-Warn "Could not unset $key" }
 }
 
 function Check-Ports([string]$h) {
   $ports = @(
-    @{ Name='apt-cacher-ng'; Port=3142 },
-    @{ Name='verdaccio';    Port=4873 },
-    @{ Name='devpi';        Port=3141 }
+    @{ Name='verdaccio (NPM)';  Port=4873 },
+    @{ Name='devpi (PIP)';      Port=3141 }
   )
 
   foreach ($p in $ports) {
@@ -170,9 +176,9 @@ function Check-Ports([string]$h) {
     } catch { $ok = $false }
 
     if ($ok) {
-      Write-Log "OK   TCP reachable: $($p.Name) on ${h}:$($p.Port)"
+      Write-Success "TCP reachable: $($p.Name) on ${h}:$($p.Port)"
     } else {
-      Write-Warn "FAIL TCP not reachable: $($p.Name) on ${h}:$($p.Port) (firewall/network?)"
+      Write-Warn "TCP not reachable: $($p.Name) on ${h}:$($p.Port) (Check server firewall)"
     }
   }
 }
@@ -187,39 +193,32 @@ function Install-Client([string]$h) {
     savedAt = (Get-Date).ToString('o')
   }
 
-  # --- npm ---
+  Write-Log "--- Configuring NPM ---"
   if (Tool-Exists 'npm') {
     $state.npm.prevRegistry = Npm-GetRegistry
     Npm-SetRegistry "http://${h}:4873/"
-  } else {
-    Write-Warn "npm not found; skipping npm config."
-  }
+  } else { Write-Warn "npm not found; skipping." }
 
-  # --- pip ---
+  Write-Log "--- Configuring PIP ---"
   $py = Find-PythonCmd
   if ($null -ne $py) {
     try {
-      Pip-Run @('--version') | Out-Null
-      $state.pip.prevIndexUrl     = Pip-GetConfig 'global.index-url'
-      $state.pip.prevTrustedHost  = Pip-GetConfig 'global.trusted-host'
+      $state.pip.prevIndexUrl    = Pip-GetConfig 'global.index-url'
+      $state.pip.prevTrustedHost = Pip-GetConfig 'global.trusted-host'
 
       Pip-SetConfig 'global.index-url' "http://${h}:3141/root/pypi/+simple/"
       Pip-SetConfig 'global.trusted-host' $h
     } catch {
-      Write-Warn "Python found but pip not available. Install pip (or reinstall Python with pip)."
+      # FIX: Print the exact system error
+      Write-Warn "Error occurred configuring PIP: $_"
+      Write-Warn "You may need to run PowerShell as Administrator."
     }
-  } else {
-    Write-Warn "Python not found; skipping pip config."
-  }
+  } else { Write-Warn "Python not found; skipping." }
 
   Save-State $state
 
-  Write-Log "Client configured to use cache server: $h"
-  Write-Log "Quick tests:"
-  Write-Host "  npm:  npm cache clean --force; npm i lodash"
-  Write-Host "  pip:  python -m pip cache purge; python -m pip install requests"
-  Write-Host "  note: APT caching is Linux-only; use WSL2 Ubuntu for APT."
-
+  Write-Log ""
+  Write-Success "Client configured to use cache server: $h"
   Check-Ports $h
 }
 
@@ -230,66 +229,48 @@ function Reset-Client {
     return
   }
 
+  Write-Log "--- Resetting NPM ---"
   if (Tool-Exists 'npm') {
     Npm-RestoreRegistry $state.npm.prevRegistry
   }
 
+  Write-Log "--- Resetting PIP ---"
   $py = Find-PythonCmd
   if ($null -ne $py) {
-    try {
-      Pip-Run @('--version') | Out-Null
+    Pip-UnsetConfig 'global.index-url'
+    Pip-UnsetConfig 'global.trusted-host'
 
-      # Always clear current, then restore best-effort.
-      Pip-UnsetConfig 'global.index-url'
-      Pip-UnsetConfig 'global.trusted-host'
-
-      if (-not [string]::IsNullOrWhiteSpace($state.pip.prevIndexUrl)) {
-        Pip-SetConfig 'global.index-url' $state.pip.prevIndexUrl
-      }
-      if (-not [string]::IsNullOrWhiteSpace($state.pip.prevTrustedHost)) {
-        Pip-SetConfig 'global.trusted-host' $state.pip.prevTrustedHost
-      }
-    } catch {
-      Write-Warn "Could not reset pip config (pip missing)."
+    if (-not [string]::IsNullOrWhiteSpace($state.pip.prevIndexUrl)) {
+      Pip-SetConfig 'global.index-url' $state.pip.prevIndexUrl
+    }
+    if (-not [string]::IsNullOrWhiteSpace($state.pip.prevTrustedHost)) {
+      Pip-SetConfig 'global.trusted-host' $state.pip.prevTrustedHost
     }
   }
 
   try { Remove-Item -LiteralPath $StateFile -Force } catch { }
-  Write-Log "Client reset done."
+  Write-Success "Client reset done."
 }
 
 function Status-Client([string]$h) {
   Test-ServerHost $h
 
-  Write-Log "Current client configuration"
-
+  Write-Log "--- Current Client Configuration ---"
   if (Tool-Exists 'npm') {
     $reg = Npm-GetRegistry
-    Write-Host "  npm registry: $reg"
-  } else {
-    Write-Host "  npm registry: (npm not installed)"
-  }
+    Write-Host "  npm registry: " -NoNewline; Write-Host "$reg" -ForegroundColor Magenta
+  } else { Write-Host "  npm registry: (npm not installed)" }
 
   $py = Find-PythonCmd
   if ($null -ne $py) {
-    try {
-      Pip-Run @('--version') | Out-Null
-      $idx = Pip-GetConfig 'global.index-url'
-      $thr = Pip-GetConfig 'global.trusted-host'
-      Write-Host "  pip index-url: $idx"
-      Write-Host "  pip trusted-host: $thr"
-    } catch {
-      Write-Host "  pip: (pip not available)"
-    }
-  } else {
-    Write-Host "  pip: (python not installed)"
-  }
+    $idx = Pip-GetConfig 'global.index-url'
+    $thr = Pip-GetConfig 'global.trusted-host'
+    Write-Host "  pip index-url: " -NoNewline; Write-Host "$idx" -ForegroundColor Magenta
+    Write-Host "  pip trusted-host: " -NoNewline; Write-Host "$thr" -ForegroundColor Magenta
+  } else { Write-Host "  pip: (python not installed)" }
 
-  Write-Log "Server reachability checks"
+  Write-Log "`n--- Server Reachability Checks ---"
   Check-Ports $h
-  Write-Host "  verdaccio url: http://${h}:4873/"
-  Write-Host "  devpi url:     http://${h}:3141/"
-  Write-Host "  apt url:       http://${h}:3142/acng-report.html (Linux/WSL only)"
 }
 
 switch ($Action) {
